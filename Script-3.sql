@@ -181,8 +181,106 @@ WHERE
 		) AS SEL
 	);
 	
+--________________________________________________________________________
+--ПРОЦЕДУРЫ, ФУНКЦИИ, ТРИГГЕРЫ, КЛЮЧИ
+--________________________________________________________________________ 
 
-SELECT
-	*
-FROM
-	MODELS M;
+--ПРОЦЕДУРА
+CREATE OR REPLACE PROCEDURE upPrice(price_id int, new_value int, new_max_discount int)
+LANGUAGE plpgsql
+AS $$
+BEGIN 
+	UPDATE prices
+	SET 
+		value = new_value,
+		max_discount = new_max_discount
+	WHERE prices.id = price_id;
+END;
+$$
+
+
+SELECT * FROM PRICES P WHERE id = 2;
+SELECT * FROM PRICES P WHERE id = 3;
+
+--Запуск процедуры
+CALL upPrice(2, 1000000, 5);
+CALL upPrice(3, 1002000, 2);
+
+
+--ФУНКЦИЯ
+CREATE OR REPLACE FUNCTION modelCountByManufacturer(manuf_id int)
+RETURNS int
+LANGUAGE plpgsql
+AS $$ 
+DECLARE models_count int;
+BEGIN
+	SELECT COUNT(DISTINCT  models."name")
+	FROM models
+	INTO models_count 
+	WHERE models.MANUFACTURER_ID = manuf_id;
+	RETURN models_count;
+END;
+$$ 
+
+
+--Запуск функции
+SELECT modelCountByManufacturer(4);
+SELECT modelCountByManufacturer(6);
+
+
+
+--Триггеры (часто используют для логгирования, соблюдения связанности таблиц, даже если для них не 
+-- установлены явные связи)
+
+--1. Если будет логгироваться, то надо убедиться, что таблица для логов существует.
+CREATE TABLE price_changes_log (
+id int,
+old_price int,
+new_price int,
+date_of_change DATE)
+
+--2. Создаём функцию логгирования при изменении цены.
+CREATE OR REPLACE FUNCTION log_prices_ghanges()
+RETURNS TRIGGER 
+LANGUAGE plpgsql 
+AS $$ 
+BEGIN 
+	IF NEW.value <> OLD.value THEN 
+		INSERT INTO price_changes_log (id, old_price, new_price, date_of_change)
+		VALUES (OLD.id, OLD.value, NEW.value, now());
+	END IF;
+
+	RETURN NEW;
+END;
+$$ 
+
+--3. Создаём сам триггер
+CREATE TRIGGER price_changes_log 
+	BEFORE UPDATE 
+	ON prices 
+	FOR EACH ROW 
+	EXECUTE PROCEDURE log_prices_ghanges();
+
+--Проврка логгирования
+UPDATE PRICES 	
+ SET value = 1000000	--попало в лог
+ WHERE id = 3;
+
+UPDATE PRICES 
+ SET value = 1000005	--попало в лог
+ WHERE id = 4;
+
+UPDATE PRICES 
+ SET value = 1644652	--не попало в лог, т.к. значение цены не поменялось
+ WHERE id = 5;
+
+UPDATE PRICES 
+ SET max_discount = 3	--не попало в лог, т.к. значение цены не поменялось
+ WHERE id = 5;
+
+
+--ИНДЕКСЫ
+CREATE UNIQUE INDEX name_idx ON models (id);	--Уникальный индекс только для столбцов с уникальными значениями
+CREATE INDEX name2_idx ON models (name);		--Неуникальный индекс для любых
+
+SELECT * FROM MODELS M;
